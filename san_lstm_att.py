@@ -20,7 +20,7 @@ class Answer_Generator():
         self.dim_hidden = dim_hidden
         self.dim_att = dim_attention
         self.max_words_q = max_words_q
-        self.vocabulary_size = vocabulary_size  
+        self.vocabulary_size = vocabulary_size
         self.drop_out_rate = drop_out_rate
 
         # question-embedding
@@ -43,8 +43,8 @@ class Answer_Generator():
     def build_model(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
         question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
-        label = tf.placeholder(tf.int64, [self.batch_size,]) 
-        
+        label = tf.placeholder(tf.int64, [self.batch_size,])
+
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
         loss = 0.0
         with tf.variable_scope("embed"):
@@ -74,32 +74,35 @@ class Answer_Generator():
         with tf.variable_scope("att2"):
             prob_att2, comb_emb = self.attention(comb_emb, image_emb)
         comb_emb = tf.nn.dropout(comb_emb, 1 - self.drop_out_rate)
-        scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b) 
+        scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b)
 
         # Calculate cross entropy
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label, logits=scores_emb)
 
         # Calculate loss
         loss = tf.reduce_mean(cross_entropy)
-        
+
         return loss, image, question, label
-    
+
     def build_generator(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
         question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
 
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
-        for i in range(max_words_q):
-            if i==0:
-                ques_emb_linear = tf.zeros([self.batch_size, self.input_embedding_size])
-            else:
-                tf.get_variable_scope().reuse_variables()
-                ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, question[:,i-1])
+        with tf.variable_scope(tf.get_variable_scope()) as scope:
+         for i in range(max_words_q):
+             if i==0:
+                 ques_emb_linear = tf.zeros([self.batch_size, self.input_embedding_size])
+             else:
 
-            ques_emb_drop = tf.nn.dropout(ques_emb_linear, 1-self.drop_out_rate)
-            ques_emb = tf.tanh(ques_emb_drop)
-            
-            output, state = self.stacked_lstm(ques_emb, state)
+
+                 tf.get_variable_scope().reuse_variables()
+                 ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, question[:,i-1])
+
+             ques_emb_drop = tf.nn.dropout(ques_emb_linear, 1-self.drop_out_rate)
+             ques_emb = tf.tanh(ques_emb_drop)
+
+             output, state = self.stacked_lstm(ques_emb, state)
 
         # multimodal (fusing question & image)
         question_emb = tf.reshape(tf.transpose(state, [2, 1, 0, 3]), [self.batch_size, -1])
@@ -109,12 +112,13 @@ class Answer_Generator():
         image_emb = tf.tanh(image_emb)
 
         #attention models
-        with tf.variable_scope("att1"):
+        with tf.variable_scope("att1",reuse=True):
+
             prob_att1, comb_emb = self.attention(question_emb, image_emb)
         with tf.variable_scope("att2"):
             prob_att2, comb_emb = self.attention(comb_emb, image_emb)
         comb_emb = tf.nn.dropout(comb_emb, 1 - self.drop_out_rate)
-        scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b) 
+        scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b)
 
         # FINAL ANSWER
         generated_ANS = tf.nn.softmax(scores_emb)
@@ -124,26 +128,26 @@ class Answer_Generator():
     def attention(self, question_emb, image_emb):
         # Attention weight
         # question-attention
-        ques_att_W = tf.get_variable('ques_att_W', [self.dim_hidden, self.dim_att], 
+        ques_att_W = tf.get_variable('ques_att_W', [self.dim_hidden, self.dim_att],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
-        ques_att_b = tf.get_variable('ques_att_b', [self.dim_att], 
+        ques_att_b = tf.get_variable('ques_att_b', [self.dim_att],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
         # image-attention
-        image_att_W = tf.get_variable('image_att_W', [self.dim_hidden, self.dim_att], 
+        image_att_W = tf.get_variable('image_att_W', [self.dim_hidden, self.dim_att],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
-        image_att_b = tf.get_variable('image_att_b', [self.dim_att], 
+        image_att_b = tf.get_variable('image_att_b', [self.dim_att],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
         # probability-attention
-        prob_att_W = tf.get_variable('prob_att_W', [self.dim_att, 1], 
+        prob_att_W = tf.get_variable('prob_att_W', [self.dim_att, 1],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
-        prob_att_b = tf.get_variable('prob_att_b', [1], 
+        prob_att_b = tf.get_variable('prob_att_b', [1],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
 
         question_att = tf.expand_dims(question_emb, 1) # b x 1 x d
         question_att = tf.tile(question_att, tf.constant([1, self.dim_image[0] * self.dim_image[1], 1])) # b x m x d
         question_att = tf.reshape(question_att, [-1, self.dim_hidden]) # (b x m) x d
         question_att = tf.tanh(tf.nn.xw_plus_b(question_att, ques_att_W, ques_att_b)) # (b x m) x k
-        
+
         image_att = tf.tanh(tf.nn.xw_plus_b(image_emb, image_att_W, image_att_b)) # (b x m) x k
 
         output_att = tf.tanh(image_att + question_att) # (b x m) x k
@@ -163,15 +167,15 @@ class Answer_Generator():
         comb_emb = tf.add(image_att, question_emb)
 
         return prob_att, comb_emb
-    
+
 #####################################################
-#                 Global Parameters                 #  
+#                 Global Parameters                 #
 #####################################################
 print('Loading parameters ...')
 # Data input setting
-input_img_h5 = 'data_img.h5'
-input_ques_h5 = 'data_prepro.h5'
-input_json = 'data_prepro.json'
+input_img_h5 = '/home/ksharan1/san-vqa-tensorflow-master/data_img_pool5_train.h5'
+input_ques_h5 = '/home/ksharan1/san-vqa-tensorflow-master/data_prepro.h5'
+input_json = '/home/ksharan1/san-vqa-tensorflow-master/data_prepro.json'
 
 # Train Parameters setting
 learning_rate = 0.0003                  # learning rate for rmsprop
@@ -224,6 +228,8 @@ def get_data():
         # -----0~82459------
         tem = hf.get('images_train')
         img_feature = np.array(tem)
+
+
     # load h5 file
     print('loading h5 file...')
     with h5py.File(input_ques_h5,'r') as hf:
@@ -249,7 +255,7 @@ def get_data():
     if img_norm:
         #tem = np.sqrt(np.sum(np.multiply(img_feature, img_feature), axis=1))
         tem = np.sqrt(np.sum(np.multiply(img_feature, img_feature), axis=1))
-        
+
         #img_feature = np.divide(img_feature, np.transpose(np.tile(tem,(4096,1))))
         img_feature = np.transpose(img_feature,(0,2,3,1))
         img_feature = np.divide(img_feature, np.transpose(np.tile(tem,[512,1,1,1]),(1,2,3,0)) + 1e-8)
@@ -302,7 +308,7 @@ def get_data_test():
     print('Normalizing image feature')
     if img_norm:
         tem = np.sqrt(np.sum(np.multiply(img_feature, img_feature), axis=1))
-        
+
         img_feature = np.transpose(img_feature,(0,2,3,1))
         img_feature = np.divide(img_feature, np.transpose(np.tile(tem,[512,1,1,1]),(1,2,3,0)) + 1e-8)
 
@@ -324,7 +330,7 @@ def train():
             dim_image = img_feature[0].shape,
             dim_hidden = dim_hidden,
             dim_attention = dim_attention,
-            max_words_q = max_words_q,  
+            max_words_q = max_words_q,
             vocabulary_size = vocabulary_size,
             drop_out_rate = 0.5)
 
@@ -395,7 +401,8 @@ def test():
             dim_attention = dim_attention,
             max_words_q = max_words_q,
             vocabulary_size = vocabulary_size,
-            drop_out_rate = 0)
+            drop_out_rate = 0,
+            )
 
     tf_answer, tf_image, tf_question, tf_prob_att1, tf_prob_att2 = model.build_generator()
 
@@ -404,7 +411,7 @@ def test():
     with tf.device('/cpu:0'):
         saver = tf.train.Saver()
         saver.restore(sess, os.path.join(checkpoint_path, 'model-70000'))
-
+    print os.path.join(checkpoint_path, 'model-70000')
     tStart_total = time.time()
     result = []
     for current_batch_start_idx in xrange(0,num_test-1,batch_size):
@@ -466,11 +473,10 @@ def test():
     dd = json.dump(my_list,open('san_lstm_att.json','w'))
 
 if __name__ == '__main__':
-    
+
     with tf.device('/gpu:'+str(0)):
-        train()
-    """
-    with tf.device('/gpu: 0'):
-        test()
-    """
-    
+
+    train()
+
+    #with tf.device('/gpu: 0'):
+     #   test()
