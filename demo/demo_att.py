@@ -3,12 +3,7 @@ from scipy.ndimage.filters import gaussian_filter
 import scipy.misc as misc
 import numpy as np
 import cv2
-# import caffe
-from keras.preprocessing import image
-from keras.applications.vgg19 import VGG19
-from keras.applications.vgg19 import preprocess_input
-from keras.models import Model
-
+import caffe
 import numpy as np
 import tensorflow as tf
 import json
@@ -44,7 +39,6 @@ class Answer_Generator():
 
         # question-embedding
         self.embed_ques_W = tf.Variable(tf.random_uniform([self.vocabulary_size, self.input_embedding_size], -0.08, 0.08), name='embed_ques_W')
-
         # encoder: RNN body
         # self.lstm_1 = rnn_cell.LSTMCell(rnn_size, input_embedding_size, use_peepholes=True)
         self.lstm_1 = rnn_cell.LSTMCell(rnn_size, use_peepholes=True)
@@ -74,20 +68,41 @@ class Answer_Generator():
         #self.prob_att_b = tf.Variable(tf.random_uniform([1], -0.08, 0.08), name='prob_att_b')
 
     def build_generator(self):
-        self.image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
-        self.question = tf.placeholder(tf.float32, [self.batch_size, self.max_words_q, self.input_embedding_size])
+        #self.image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
+        #self.question = tf.placeholder(tf.float32, [self.batch_size, self.max_words_q])
 
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
         loss = 0.0
+        states_feat=[]
         with tf.variable_scope("embed"):
             for i in range(max_words_q):
-                if i > 0:
-                    tf.get_variable_scope().reuse_variables()
-                output, state = self.stacked_lstm(self.question[:, i], state)
+               if i==0:
+                   ques_emb_linear = tf.zeros([self.batch_size, self.input_embedding_size])
+                   print "given shape"
+                   print ques_emb_linear.shape
+               else:
+                   tf.get_variable_scope().reuse_variables()
+                   ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, self.question[:,i-1])
+                   print "now"
+                   print ques_emb_linear.shape
+
+
+               ques_emb_drop = tf.nn.dropout(ques_emb_linear, 1-self.drop_out_rate)
+
+
+               ques_emb = tf.tanh(ques_emb_drop)
+
+               output, state = self.stacked_lstm(ques_emb, state)
+
+               #states_feat.append(ques_emb_linear)
+            #question_feat = tf.stack(states_feat,axis=-1)
+            #question_emb = state
+        question_emb = tf.reshape(tf.transpose(state, [2, 1, 0, 3]), [self.batch_size, -1])
 
         # multimodal (fusing question & image)
         #question_emb = state
-        question_emb = tf.reshape(tf.transpose(state, [2, 1, 0, 3]), [self.batch_size, -1])
+        #question_emb = tf.reshape(tf.transpose(state, [2, 1, 0, 3]), [self.batch_size, -1])
+
         image_emb = tf.reshape(self.image, [-1, self.dim_image[2]]) # (b x m) x d
         image_emb = tf.nn.xw_plus_b(image_emb, self.embed_image_W, self.embed_image_b)
         image_emb = tf.tanh(image_emb)
@@ -122,12 +137,11 @@ class Answer_Generator():
                            initializer=tf.random_uniform_initializer(-0.08, 0.08))
         prob_att_b = tf.get_variable('prob_att_b', [1],
                             initializer=tf.random_uniform_initializer(-0.08, 0.08))
-
-
-
         question_att = tf.expand_dims(question_emb, 1) # b x 1 x d
+        #question_att.shape
+        #question_att = tf.tile(question_att, tf.constant([1, self.dim_image[0] * self.dim_image[1], 1])) # b x m x d
+        #question_att = tf.tile(question_att, tf.constant([1, self.dim_image[0]  * self.dim_image[1], 1])) # b x m x d
 
-        question_att = tf.tile(question_att, tf.constant([1, self.dim_image[0] * self.dim_image[1], 1])) # b x m x d
         question_att = tf.reshape(question_att, [-1, self.dim_hidden]) # (b x m) x d
         question_att = tf.tanh(tf.nn.xw_plus_b(question_att, ques_att_W, ques_att_b)) # (b x m) x k
 
@@ -148,7 +162,6 @@ class Answer_Generator():
         image_att = tf.reduce_sum(image_att, 1)
 
         comb_emb = tf.add(image_att, question_emb)
-        print tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='att1')
 
         return prob_att, comb_emb
 
@@ -163,7 +176,7 @@ class Answer_Generator():
         return generated_ans, prob_att1, prob_att2
 
 ##########################################################
-web_path = '/home/ksharan1/san-vqa-tensorflow-master/demo/'
+web_path = '/home/ksharan1/san-vqa-tensorflow/demo/'
 
 vqa_data_json = os.path.join(web_path, 'vqa_data.json')
 answer_txt = os.path.join(web_path, 'media/vqa_ans.txt')
@@ -171,12 +184,12 @@ att_image = os.path.join(web_path, 'media/att.jpg')
 #ques = 'What is this photo taken looking through?'
 
 
-itoa_json = '/home/ksharan1/san-vqa-tensorflow-master/ix_to_ans.json'            # mapping idx to answer
-wtoi_json = '/home/ksharan1/san-vqa-tensorflow-master/word_to_ix.json'           # mapping word to idx
-# cnn_proto = '/home/ksharan1/san-vqa-tensorflow-master/vgg19/deploy_batch40.prototxt'
-# cnn_model = '/home/ksharan1/san-vqa-tensorflow-master/vgg19/VGG_ILSVRC_19_layers.caffemodel'
-vqa_model = '/home/ksharan1/san-vqa-tensorflow-master/newmodel/san_lstm_att/model-70000'
-new_checkpoint= '/home/ksharan1/san-vqa-tensorflow-master/newmodel/san_lstm_att/model2-70000'
+itoa_json = '/home/ksharan1/san-vqa-tensorflow/ix_to_ans.json'            # mapping idx to answer
+wtoi_json = '/home/ksharan1/san-vqa-tensorflow/word_to_ix.json'           # mapping word to idx
+cnn_proto = '/home/ksharan1/san-vqa-tensorflow/vgg19/deploy_batch40.prototxt'
+cnn_model = '/home/ksharan1/san-vqa-tensorflow/vgg19/VGG_ILSVRC_19_layers.caffemodel'
+vqa_model = '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model-70000'
+new_checkpoint= '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model2-70000'
 
 input_embedding_size = 512              # the encoding size of each token in the vocabulary
 rnn_size = 256                          # size of the rnn in number of hidden nodes in each layer
@@ -207,13 +220,12 @@ def prepro_text(ques):
     return label_arrays
 
 def extract_imfeat(img):
+
     #base_model = VGG19(weights='imagenet')
     #model = Model(inputs=base_model.input, outputs=base_model.get_layer('block5_pool').output)
-
     #model.summary()
     #img_path = 'train/dogs/1.jpg'
     #img = image.load_img(img_path, target_size=(224, 224))
-
     #mean = np.array((103.939, 116.779, 123.680), dtype=np.float32)
     #img_transform = misc.imresize(img, (IMG_HEIGHT, IMG_WIDTH)) - mean
     # img_data = image.load_img(img, target_size=(224, 224) )
@@ -223,20 +235,20 @@ def extract_imfeat(img):
 
     caffe.set_device(0)
     caffe.set_mode_gpu()
-    print "runs before this"
     net = caffe.Net(cnn_proto, cnn_model, caffe.TEST)
-    print "runs till this"
     mean = np.array((103.939, 116.779, 123.680), dtype=np.float32)
-
     I = misc.imresize(img, (IMG_HEIGHT, IMG_WIDTH))-mean
     I = np.transpose(I, (2, 0, 1))
     net.blobs['data'].data[:] = np.array([I])
     net.forward()
-    imfeat = net.blobs['pool5'].data[...].copy()
+    imfeat = net.blobs['fc7'].data[...].copy()
+    print "ferferferf"
     mag = np.sqrt(np.sum(np.multiply(imfeat, imfeat), axis=1))
     imfeat = np.transpose(imfeat,(0,2,3,1))
     imfeat = np.divide(imfeat, np.transpose(np.tile(mag,[512,1,1,1]),(1,2,3,0)) + 1e-8)
     return imfeat
+
+
 
 def attention(img, att_map):
 
@@ -252,7 +264,7 @@ def attention(img, att_map):
 
     return new_img
 
-def test(model_path='newmodel/san_lstm_att/model-70000'):
+def test(model_path='model/san_lstm_att/model-70000'):
     #
     print("Model Path: " + model_path)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2, allow_growth=True)
@@ -291,7 +303,7 @@ def test(model_path='newmodel/san_lstm_att/model-70000'):
 
     with tf.device('/cpu: 0'):
     	saver = tf.train.Saver(t_vars)
-    	saver.restore(sess, '/home/ksharan1/san-vqa-tensorflow-master/newmodel/san_lstm_att/model-70000')
+    	saver.restore(sess, '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model-70000')
 
     while 1:
         print "im here komal"
@@ -299,6 +311,7 @@ def test(model_path='newmodel/san_lstm_att/model-70000'):
             # get data
             vqa_data = json.load(open(vqa_data_json, 'r'))
             ques = vqa_data['question']
+
 
             imname = os.path.join(web_path, vqa_data['image'].encode('utf-8')[1:])
             print imname
