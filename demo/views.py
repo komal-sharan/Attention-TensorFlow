@@ -39,7 +39,7 @@ def upload_vqa(request):
         for x in imgs_train:
             list_of_img.append(x['ques_id'])
         vqa_data_file = {}
-        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/media"
+        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
         for image_path in os.listdir(pathdir):
             input_path = os.path.join(pathdir, image_path)
             question_id=image_path.split('_')[0]
@@ -56,7 +56,7 @@ def upload_vqa(request):
         vqa_data_file['image'] ="../../"+imgs_train[index]['img_path']
         vqa_data_file['question'] = imgs_train[index]['question']
         json.dump(vqa_data_file, open('/home/ksharan1/visualization/san-vqa-tensorflow/demo/vqa_data_file.json', 'w'))
-        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/media"
+        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
         image = vqa_data_file['image']
         question = vqa_data_file['question']
         json.dump(vqa_data_file, open('vqa_data.json', 'w'))
@@ -65,7 +65,8 @@ def upload_vqa(request):
             if fs.exists('vqa_ans.txt'):
                 with fs.open('vqa_ans.txt', 'r') as f:
                     answer = f.read()
-                    att_image_url_san = fs.url('att.jpg')
+                    att_image_url = fs.url('att.jpg')
+
                     fs.delete('vqa_ans.txt')
 
             break
