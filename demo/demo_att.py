@@ -40,21 +40,23 @@ class Answer_Generator():
         # question-embedding
         self.embed_ques_W = tf.Variable(tf.random_uniform([self.vocabulary_size, self.input_embedding_size], -0.08, 0.08), name='embed_ques_W')
         # encoder: RNN body
-        # self.lstm_1 = rnn_cell.LSTMCell(rnn_size, input_embedding_size, use_peepholes=True)
-        self.lstm_1 = rnn_cell.LSTMCell(rnn_size, use_peepholes=True)
+        self.lstm_1 = rnn_cell.LSTMCell(rnn_size, input_embedding_size, use_peepholes=True)
+        #self.lstm_1 = rnn_cell.LSTMCell(rnn_size, use_peepholes=True)
         self.lstm_dropout_1 = rnn_cell.DropoutWrapper(self.lstm_1, output_keep_prob = 1 - self.drop_out_rate)
-        # self.lstm_2 = rnn_cell.LSTMCell(rnn_size, rnn_size, use_peepholes=True)
+        self.lstm_2 = rnn_cell.LSTMCell(rnn_size, rnn_size, use_peepholes=True)
+
         self.lstm_2 = rnn_cell.LSTMCell(rnn_size, use_peepholes=True)
+
         self.lstm_dropout_2 = rnn_cell.DropoutWrapper(self.lstm_2, output_keep_prob = 1 - self.drop_out_rate)
         self.stacked_lstm = rnn_cell.MultiRNNCell([self.lstm_dropout_1, self.lstm_dropout_2])
 
         # image-embedding
-        self.embed_image_W = tf.Variable(tf.random_uniform([dim_image[2], self.dim_hidden], -0.08, 0.08), name='embed_image_W')
-        self.embed_image_b = tf.Variable(tf.random_uniform([dim_hidden], -0.08, 0.08), name='embed_image_b')
+        self.embed_image_W = tf.Variable(tf.random_uniform([self.dim_image[2], self.dim_hidden], -0.08, 0.08), name='embed_image_W')
+        self.embed_image_b = tf.Variable(tf.random_uniform([self.dim_hidden], -0.08, 0.08), name='embed_image_b')
         # score-embedding
-        self.embed_scor_W = tf.Variable(tf.random_uniform([dim_hidden, num_output], -0.08, 0.08), name='embed_scor_W')
+        self.embed_scor_W = tf.Variable(tf.random_uniform([self.dim_hidden, num_output], -0.08, 0.08), name='embed_scor_W')
         self.embed_scor_b = tf.Variable(tf.random_uniform([num_output], -0.08, 0.08), name='embed_scor_b')
-
+        print "newest"
         # Attention weight
         # question-attention
         #self.ques_att_W = tf.Variable(tf.random_uniform([self.dim_hidden, self.dim_att], -0.08, 0.08),name='ques_att_W')
@@ -68,8 +70,8 @@ class Answer_Generator():
         #self.prob_att_b = tf.Variable(tf.random_uniform([1], -0.08, 0.08), name='prob_att_b')
 
     def build_generator(self):
-        #self.image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
-        #self.question = tf.placeholder(tf.float32, [self.batch_size, self.max_words_q])
+        self.image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
+        self.question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
 
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
         loss = 0.0
@@ -82,7 +84,7 @@ class Answer_Generator():
                    print ques_emb_linear.shape
                else:
                    tf.get_variable_scope().reuse_variables()
-                   ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, self.question[:,i-1])
+                   ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W,self.question[:,i-1])
                    print "now"
                    print ques_emb_linear.shape
 
@@ -113,7 +115,7 @@ class Answer_Generator():
         with tf.variable_scope("att2"):
             self.prob_att2, comb_emb = self.attention(comb_emb, image_emb)
         comb_emb = tf.nn.dropout(comb_emb, 1 - self.drop_out_rate)
-        scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b)
+        scores_emb = tf.nn.xw_plus_b(comb_emb,self.embed_scor_W, self.embed_scor_b)
 
         # FINAL ANSWER
         self.generated_ANS = tf.nn.softmax(scores_emb)
@@ -241,7 +243,7 @@ def extract_imfeat(img):
     I = np.transpose(I, (2, 0, 1))
     net.blobs['data'].data[:] = np.array([I])
     net.forward()
-    imfeat = net.blobs['fc7'].data[...].copy()
+    imfeat = net.blobs['pool5'].data[...].copy()
     print "ferferferf"
     mag = np.sqrt(np.sum(np.multiply(imfeat, imfeat), axis=1))
     imfeat = np.transpose(imfeat,(0,2,3,1))
@@ -268,10 +270,10 @@ def test(model_path='model/san_lstm_att/model-70000'):
     #
     print("Model Path: " + model_path)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2, allow_growth=True)
-    #sess = tf.Session(tf.global_variables_initializer())
+    sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     #tf.initialize_all_variables().run(session=sess)
-    with tf.Session() as sess:
-        tf.initialize_all_variables()
+    #with tf.Session() as sess:
+    #    tf.initialize_all_variables()
 
 
     model = Answer_Generator(
@@ -289,17 +291,14 @@ def test(model_path='model/san_lstm_att/model-70000'):
 
     model.build_generator()
 
-    gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
-    sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+    #gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
+    #sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
-    new_checkpoint_vars = {}
+    #new_checkpoint_vars = {}
     #reader = tf.train.NewCheckpointReader(vqa_model)
+    sess.run(tf.initialize_all_variables())
     t_vars = tf.trainable_variables()
-    print "type is"
-    print type(t_vars[0])
-    for v in t_vars:
-        print "\n"
-        print v
+    
 
     with tf.device('/cpu: 0'):
     	saver = tf.train.Saver(t_vars)
