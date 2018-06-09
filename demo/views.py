@@ -22,50 +22,57 @@ import re
 
 def upload_vqa(request):
     fs = FileSystemStorage()
-    uploaded_file_url_vqa_hat = fs.url('gray.png')
+    uploaded_file_url = fs.url('gray.png')
 
      # default image
-    att_image_url_san = fs.url('gray.png')
+    att_image_url = fs.url('gray.png')
     vqa_data_file = {}     # default image
     if request.method == 'POST':
         imgs_train = json.load(open('/home/ksharan1/visualization/san-vqa-tensorflow/data/vqa_raw_train.json', 'r'))
         list_of_paths=[]
         list_of_img=[]
-        index=random.randint(0,45000)
-        print(index)
-        print(imgs_train[index])
+
+
 
         list_of_img=[]
+        list_of_vqa_paths=[]
+        list_vqa_hat=[]
         for x in imgs_train:
             list_of_img.append(x['ques_id'])
 
-        print(list_of_img)
+
+
+
 
 
         vqa_data_file = {}
         pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train"
 
-
         for image_path in os.listdir(pathdir):
             input_path = os.path.join(pathdir, image_path)
-            print(input_path)
 
             question_id=image_path.split('_')[0]
-            for x in range(0,len(list_of_img)):
-                print("1")
-                print(imgs_train[index]['ques_id'])
-                print("2")
-                print(str(list_of_img[x]))
+            list_vqa_hat.append(question_id)
+            list_of_vqa_paths.append(image_path)
 
-                if str(list_of_img[x])==imgs_train[index]['ques_id']:
-                    uploaded_file_url_vqa_hat=input_path
-                    break
+        index=random.randint(0,len(list_vqa_hat))
+
+
+
+        for x in range(len(list_of_img)-1):
+            input_path = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train/"+str(list_of_vqa_paths[index])
+            print(list_of_img[x])
+
+            print(list_vqa_hat[index])
+            if str(list_of_img[x])==str(list_vqa_hat[index]):
+                uploaded_file_url=input_path
+                print("found")
+                break
 
 
         vqa_data_file['image'] ="../../"+imgs_train[index]['img_path']
         vqa_data_file['question'] = imgs_train[index]['question']
-        print(vqa_data_file['image'])
-        print(vqa_data_file['question'])
+
 
 
         json.dump(vqa_data_file, open('/home/ksharan1/visualization/san-vqa-tensorflow/demo/vqa_data_file.json', 'w'))
@@ -74,13 +81,13 @@ def upload_vqa(request):
 
         image = vqa_data_file['image']
         question = vqa_data_file['question']
-        filename = fs.save(image.name, image)
-        uploaded_file_url = fs.url(filename)
-        vqa_data['image'] = uploaded_file_url
-        vqa_data['question'] = question
-        print
+        #filename = fs.save(image.name, image)
+        #uploaded_file_url = fs.url(filename)
+        #vqa_data['image'] = uploaded_file_url
+        #vqa_data['question'] = question
+
             # save uploaded question-image pair
-        json.dump(vqa_data, open('vqa_data.json', 'w'))
+        json.dump(vqa_data_file, open('vqa_data.json', 'w'))
         answer = ''
             # wait for processed result
         while 1:
@@ -92,13 +99,13 @@ def upload_vqa(request):
 
             break
         return render(request, 'upload.html', {
-                'uploaded_file_url': uploaded_file_url_vqa_hat,
-                'att_image_url': att_image_url_san,
+                'uploaded_file_url': uploaded_file_url,
+                'att_image_url': att_image_url,
                 'input_question': question,
                 'vqa_ans': answer
 
             })
     return render(request, 'upload.html', {
-                'uploaded_file_url': uploaded_file_url_vqa_hat,
-                'att_image_url': att_image_url_san
+                'uploaded_file_url': uploaded_file_url,
+                'att_image_url': att_image_url
             })
