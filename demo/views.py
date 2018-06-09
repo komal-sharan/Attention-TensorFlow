@@ -19,77 +19,48 @@ from nltk.tokenize import word_tokenize
 import json
 import os.path
 import re
+from django.core.files import File
 
 def upload_vqa(request):
     fs = FileSystemStorage()
     uploaded_file_url = fs.url('gray.png')
 
      # default image
+
     att_image_url = fs.url('gray.png')
     vqa_data_file = {}     # default image
     if request.method == 'POST':
         imgs_train = json.load(open('/home/ksharan1/visualization/san-vqa-tensorflow/data/vqa_raw_train.json', 'r'))
         list_of_paths=[]
         list_of_img=[]
-
-
-
         list_of_img=[]
         list_of_vqa_paths=[]
         list_vqa_hat=[]
         for x in imgs_train:
             list_of_img.append(x['ques_id'])
-
-
-
-
-
-
         vqa_data_file = {}
-        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train"
-
+        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/media"
         for image_path in os.listdir(pathdir):
             input_path = os.path.join(pathdir, image_path)
-
             question_id=image_path.split('_')[0]
             list_vqa_hat.append(question_id)
             list_of_vqa_paths.append(image_path)
-
         index=random.randint(0,len(list_vqa_hat))
-
-
-
         for x in range(len(list_of_img)-1):
-            input_path = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train/"+str(list_of_vqa_paths[index])
-            print(list_of_img[x])
-
-            print(list_vqa_hat[index])
+            input_path = fs.url(str(list_of_vqa_paths[index]))
+            print input_path
             if str(list_of_img[x])==str(list_vqa_hat[index]):
                 uploaded_file_url=input_path
-                print("found")
                 break
-
 
         vqa_data_file['image'] ="../../"+imgs_train[index]['img_path']
         vqa_data_file['question'] = imgs_train[index]['question']
-
-
-
         json.dump(vqa_data_file, open('/home/ksharan1/visualization/san-vqa-tensorflow/demo/vqa_data_file.json', 'w'))
-        pathdir = "/home/ksharan1/san-vqa-tensorflow/vqa-hat/vqahat_train"
-
-
+        pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/media"
         image = vqa_data_file['image']
         question = vqa_data_file['question']
-        #filename = fs.save(image.name, image)
-        #uploaded_file_url = fs.url(filename)
-        #vqa_data['image'] = uploaded_file_url
-        #vqa_data['question'] = question
-
-            # save uploaded question-image pair
         json.dump(vqa_data_file, open('vqa_data.json', 'w'))
         answer = ''
-            # wait for processed result
         while 1:
             if fs.exists('vqa_ans.txt'):
                 with fs.open('vqa_ans.txt', 'r') as f:
