@@ -20,6 +20,8 @@ import json
 import os.path
 import re
 from django.core.files import File
+import time
+
 
 def upload_vqa(request):
     fs = FileSystemStorage()
@@ -48,36 +50,50 @@ def upload_vqa(request):
         index=random.randint(0,len(list_vqa_hat))
         for x in range(len(list_of_img)-1):
             input_path = fs.url(str(list_of_vqa_paths[index]))
-            print input_path
+
             if str(list_of_img[x])==str(list_vqa_hat[index]):
                 uploaded_file_url=input_path
                 break
 
-        vqa_data_file['image'] ="../../"+imgs_train[index]['img_path']
+        vqa_data_file['image'] ="/home/ksharan1/visualization/san-vqa-tensorflow/data/"+imgs_train[index]['img_path']
+
+        originalimage=imgs_train[index]['img_path'].split('/')[1]
+        print originalimage
+        originalimage=fs.url(str(originalimage))
         vqa_data_file['question'] = imgs_train[index]['question']
         json.dump(vqa_data_file, open('/home/ksharan1/visualization/san-vqa-tensorflow/demo/vqa_data_file.json', 'w'))
         pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
         image = vqa_data_file['image']
         question = vqa_data_file['question']
+
+
         json.dump(vqa_data_file, open('vqa_data.json', 'w'))
         answer = ''
+        time.sleep(5)
         while 1:
             if fs.exists('vqa_ans.txt'):
+
                 with fs.open('vqa_ans.txt', 'r') as f:
+                    #time.sleep(5)
                     answer = f.read()
+                    print answer
+
                     att_image_url = fs.url('att.jpg')
-
                     fs.delete('vqa_ans.txt')
-
             break
+        #time.sleep(2)
         return render(request, 'upload.html', {
                 'uploaded_file_url': uploaded_file_url,
                 'att_image_url': att_image_url,
+
+
                 'input_question': question,
                 'vqa_ans': answer
 
             })
+    time.sleep(2)
     return render(request, 'upload.html', {
                 'uploaded_file_url': uploaded_file_url,
+
                 'att_image_url': att_image_url
             })
