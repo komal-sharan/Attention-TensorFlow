@@ -42,7 +42,9 @@ class Answer_Generator():
 
     def build_model(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
+        vqa_image_prob = tf.placeholder(tf.float32, [7, 7])
         question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
+
         label = tf.placeholder(tf.int64, [self.batch_size,])
 
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
@@ -78,9 +80,12 @@ class Answer_Generator():
 
         # Calculate cross entropy
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label, logits=scores_emb)
+        y=prob_att2/vqa_image_prob
+        KL = tf.reduce_mean(-tf.nn.softmax_cross_entropy_with_logits(prob_a, y))
+        final_loss=cross_entropy+KL
 
         # Calculate loss
-        loss = tf.reduce_mean(cross_entropy)
+        loss = tf.reduce_mean(final_loss)
 
         return loss, image, question, label
 
@@ -94,8 +99,6 @@ class Answer_Generator():
              if i==0:
                  ques_emb_linear = tf.zeros([self.batch_size, self.input_embedding_size])
              else:
-
-
                  tf.get_variable_scope().reuse_variables()
                  ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, question[:,i-1])
 
@@ -173,9 +176,9 @@ class Answer_Generator():
 #####################################################
 print('Loading parameters ...')
 # Data input setting
-input_img_h5 = '/home/ksharan1/san-vqa-tensorflow-master/data_img_pool5_train.h5'
-input_ques_h5 = '/home/ksharan1/san-vqa-tensorflow-master/data_prepro.h5'
-input_json = '/home/ksharan1/san-vqa-tensorflow-master/data_prepro.json'
+input_img_h5 = '/home/ksharan1/san-vqa-tensorflow/data_img_pool5.h5'
+input_ques_h5 = '/home/ksharan1/san-vqa-tensorflow/data_prepro.h5'
+input_json = '/home/ksharan1/san-vqa-tensorflow/data_prepro.json'
 
 # Train Parameters setting
 learning_rate = 0.0003                  # learning rate for rmsprop
@@ -211,10 +214,22 @@ def right_align(seq,lengths):
         v[i][N-lengths[i]:N-1]=seq[i][0:lengths[i]-1]
     return v
 
+def get_attention_vqa(name):
+
+    attention_array=cv2.imread(name).astype(np.float32)
+    attention=np.average(attention_array, axis=-1)
+    print attention.shape
+    new_array=attention.resize((7,7))
+
+    return new_array
+
+
 def get_data():
 
     dataset = {}
     train_data = {}
+    train_data_newest={}
+    pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
     # load json file
     print('loading json file...')
     with open(input_json) as data_file:
@@ -229,28 +244,33 @@ def get_data():
         tem = hf.get('images_train')
         img_feature = np.array(tem)
 
-
-    # load h5 file
-    print('loading h5 file...')
-    with h5py.File(input_ques_h5,'r') as hf:
-        # total number of training data is 215375
-        # question is (26, )
+    vqa_hat_indices=[]
+    with h5py.File(input_ques_h5,'r',libver='latest') as hf:
+        print "start"
+        tem = hf.get('question_id_train')
+        print "after get"
+        train_data['question_id_train'] = np.array(tem)-1
         tem = hf.get('ques_train')
         train_data['question'] = np.array(tem)-1
-        # max length is 23
         tem = hf.get('ques_length_train')
         train_data['length_q'] = np.array(tem)
-        # total 82460 img
         tem = hf.get('img_pos_train')
-        # convert into 0~82459
         train_data['img_list'] = np.array(tem)-1
-        # answer is 1~1000
         tem = hf.get('answers')
+        count = 0
         train_data['answers'] = np.array(tem)-1
-
-    print('question aligning')
-    train_data['question'] = right_align(train_data['question'], train_data['length_q'])
-
+        for image_path in os.listdir(pathdir):
+            input_path = os.path.join(pathdir, image_path)
+            count=count+1
+            question_id=image_path.split('_')[0]
+            for x in range(len(train_data['question_id_train'])-1):
+                if str(question_id)==str(train_data['question_id_train'][x]):
+                    train_data_newest['vqa_hat_prob']=get_attention_vqa(input_path)
+                    train_data_newest['question']=train_data['question'][x]
+                    train_data_newest['length_q']=train_data['length_q'][x]
+                    train_data_newest['img_list']=train_data['img_list'][x]
+                    train_data_newest['answers']=train_data['answers'][x]
+    train_data_newest['question'] = right_align(train_data_newest['question'], train_data_newest['length_q'])
     print('Normalizing image feature')
     if img_norm:
         #tem = np.sqrt(np.sum(np.multiply(img_feature, img_feature), axis=1))
@@ -259,8 +279,8 @@ def get_data():
         #img_feature = np.divide(img_feature, np.transpose(np.tile(tem,(4096,1))))
         img_feature = np.transpose(img_feature,(0,2,3,1))
         img_feature = np.divide(img_feature, np.transpose(np.tile(tem,[512,1,1,1]),(1,2,3,0)) + 1e-8)
-
-    return dataset, img_feature, train_data
+    
+    return dataset, img_feature, train_data_newest
 
 def get_data_test():
     dataset = {}
@@ -278,10 +298,14 @@ def get_data_test():
         tem = hf.get('images_test')
         img_feature = np.array(tem)
     # load h5 file
+
     print('loading h5 file...')
     with h5py.File(input_ques_h5,'r') as hf:
         # total number of training data is 215375
         # question is (26, )
+
+
+
         tem = hf.get('ques_test')
         test_data['question'] = np.array(tem)-1
         # max length is 23
@@ -344,8 +368,9 @@ def train():
     tvars = tf.trainable_variables()
     lr = tf.Variable(learning_rate)
     opt = tf.train.AdamOptimizer(learning_rate=lr)
-    # gradient clipping
+     #gradient clipping
     gvs = opt.compute_gradients(tf_loss,tvars)
+
     with tf.device('/cpu:0'):
         clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
     train_op = opt.apply_gradients(clipped_gvs)
@@ -358,10 +383,11 @@ def train():
         # shuffle the training data
         index = np.random.random_integers(0, num_train-1, batch_size)
 
-        current_question = train_data['question'][index,:]
-        current_length_q = train_data['length_q'][index]
-        current_answers = train_data['answers'][index]
-        current_img_list = train_data['img_list'][index]
+        current_question = train_data_newest['question'][index,:]
+        current_length_q = train_data_newest['length_q'][index]
+        current_answers = train_data_newest['answers'][index]
+        current_img_list = train_data_newest['img_list'][index]
+        current_img_vqa=train_data_newest['vqa_hat_prob']
         current_img = img_feature[current_img_list,:]
 
         # do the training process!!!
@@ -369,9 +395,10 @@ def train():
                 [train_op, tf_loss],
                 feed_dict={
                     tf_image: current_img,
+                    tf_vqa : current_img_vqa,
                     tf_question: current_question,
                     tf_label: current_answers
-                    })
+                   })
 
         current_learning_rate = lr*decay_factor
         lr.assign(current_learning_rate).eval(session=sess)
@@ -476,7 +503,7 @@ if __name__ == '__main__':
 
     with tf.device('/gpu:'+str(0)):
 
-    train()
+        train()
 
     #with tf.device('/gpu: 0'):
      #   test()
