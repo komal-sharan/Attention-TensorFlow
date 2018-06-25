@@ -43,10 +43,10 @@ class Answer_Generator():
 
     def build_model(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
+
         vqa_image_prob= tf.placeholder(tf.float32, [self.batch_size,49])
 
         question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
-
         label = tf.placeholder(tf.int64, [self.batch_size,])
 
         state = self.stacked_lstm.zero_state(self.batch_size, tf.float32)
@@ -77,15 +77,12 @@ class Answer_Generator():
             prob_att1, comb_emb = self.attention(question_emb, image_emb)
         with tf.variable_scope("att2"):
             prob_att2, comb_emb = self.attention(comb_emb, image_emb)
-
-
         comb_emb = tf.nn.dropout(comb_emb, 1 - self.drop_out_rate)
         scores_emb = tf.nn.xw_plus_b(comb_emb, self.embed_scor_W, self.embed_scor_b)
 
         # Calculate cross entropy
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label, logits=scores_emb)
-        #print prob_att2.shape()
-        print tf.shape(prob_att1)
+
         y=prob_att1/vqa_image_prob
 
 
@@ -107,6 +104,8 @@ class Answer_Generator():
              if i==0:
                  ques_emb_linear = tf.zeros([self.batch_size, self.input_embedding_size])
              else:
+
+
                  tf.get_variable_scope().reuse_variables()
                  ques_emb_linear = tf.nn.embedding_lookup(self.embed_ques_W, question[:,i-1])
 
@@ -184,8 +183,8 @@ class Answer_Generator():
 #####################################################
 print('Loading parameters ...')
 # Data input setting
-input_img_h5 = '/home/ksharan1/san-vqa-tensorflow/data_img_pool5.h5'
-input_ques_h5 = '/home/ksharan1/san-vqa-tensorflow/data_prepro.h5'
+input_img_h5 = '/home/ksharan1/visualization/san-vqa-tensorflow/data_img_pool5.h5'
+input_ques_h5 = '/home/ksharan1/visualization/san-vqa-tensorflow/data_prepro.h5'
 input_json = '/home/ksharan1/visualization/san-vqa-tensorflow/data_prepro.json'
 
 # Train Parameters setting
@@ -193,7 +192,7 @@ learning_rate = 0.0003                  # learning rate for rmsprop
 #learning_rate = 0.0003                  # learning rate for rmsprop
 #starter_learning_rate = 3e-4
 learning_rate_decay_start = -1          # at what iteration to start decaying learning rate? (-1 = dont)
-batch_size = 99                        # batch_size for each iterations
+batch_size = 100                       # batch_size for each iterations
 input_embedding_size = 512 #200              # the encoding size of each token in the vocabulary
 rnn_size = 256                         # size of the rnn in number of hidden nodes in each layer
 rnn_layer = 2                           # number of the rnn layer
@@ -226,7 +225,9 @@ def get_attention_vqa(indexes,quesids):
 
     # build paths and do operations
     new_array_list=[]
-    pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
+    flag=False
+
+    pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train"
     for image_path in os.listdir(pathdir):
         input_path = os.path.join(pathdir, image_path)
         question_id=image_path.split('_')[0]
@@ -237,13 +238,14 @@ def get_attention_vqa(indexes,quesids):
                 attention=np.average(attention_array, axis=2)
 
                 new_array=np.resize(attention,(7,7))
-                new_array = np.reshape(new_array,(-1,49))
-                print new_array.shape
+                new_array = np.reshape(new_array,(49,))
 
-                new_array_list.append(attention)
+                flag=True
+                new_array_list.append(new_array)
 
 
-    return new_array_list
+
+    return np.array(new_array_list)
 
 def get_data():
 
@@ -255,7 +257,7 @@ def get_data():
         data = json.load(data_file)
     for key in data.keys():
         dataset[key] = data[key]
-    print dataset.keys()
+
     # load image feature
     print('loading image feature...')
     with h5py.File(input_img_h5,'r') as hf:
@@ -287,6 +289,9 @@ def get_data():
 
 
 
+
+
+
     print('question aligning')
     train_data['question'] = right_align(train_data['question'], train_data['length_q'])
 
@@ -299,7 +304,7 @@ def get_data():
         img_feature = np.transpose(img_feature,(0,2,3,1))
         img_feature = np.divide(img_feature, np.transpose(np.tile(tem,[512,1,1,1]),(1,2,3,0)) + 1e-8)
 
-    return  dataset, img_feature, train_data
+    return dataset, img_feature, train_data
 
 def get_data_test():
     dataset = {}
@@ -310,6 +315,7 @@ def get_data_test():
         data = json.load(data_file)
     for key in data.keys():
         dataset[key] = data[key]
+
     # load image feature
     print('loading image feature...')
     with h5py.File(input_img_h5,'r') as hf:
@@ -338,6 +344,8 @@ def get_data_test():
         # answer is 1~1000
         tem = hf.get('answers')
         test_data['answers'] = np.array(tem)-1
+
+
     print('question aligning')
     test_data['question'] = right_align(test_data['question'], test_data['length_q'])
 
@@ -353,18 +361,14 @@ def get_data_test():
 def train():
     print 'loading dataset...'
     dataset, img_feature, train_data = get_data()
-    print "returned"
-
-
-
     newp=open('valid_data.pkl')# Python 3: open(..., 'wb')
     filteredimage_id=pickle.load(newp)
     newp1=open('valid_paths.pkl')
     filteredimage_paths=pickle.load(newp1)
     num_train = len(filteredimage_paths)
-    #num_train=len(valid_data)
-    #vocabulary_size = len(dataset['ix_to_word'].keys())
-    #print 'vocabulary_size : ' + str(vocabulary_size)
+    #num_train = train_data['question'].shape[0]
+    vocabulary_size = len(dataset['ix_to_word'].keys())
+    print 'vocabulary_size : ' + str(vocabulary_size)
 
     print 'constructing  model...'
     model = Answer_Generator(
@@ -376,7 +380,7 @@ def train():
             dim_hidden = dim_hidden,
             dim_attention = dim_attention,
             max_words_q = max_words_q,
-            vocabulary_size = 1000,
+            vocabulary_size = vocabulary_size,
             drop_out_rate = 0.5)
 
     print batch_size
@@ -384,7 +388,6 @@ def train():
 
 
     tf_loss, tf_image, tf_vqa ,tf_question, tf_label = model.build_model()
-    print type(tf_label)
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
@@ -394,9 +397,8 @@ def train():
     tvars = tf.trainable_variables()
     lr = tf.Variable(learning_rate)
     opt = tf.train.AdamOptimizer(learning_rate=lr)
-     #gradient clipping
+    # gradient clipping
     gvs = opt.compute_gradients(tf_loss,tvars)
-
     with tf.device('/cpu:0'):
         clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
     train_op = opt.apply_gradients(clipped_gvs)
@@ -407,15 +409,11 @@ def train():
     for itr in range(max_itr):
         tStart = time.time()
         # shuffle the training data
-        print "--------------------------------"
+
         newarr=sorted(filteredimage_id)
-        print len(newarr)
-        print newarr[0]
-        print "--------------------------------"
-        print  newarr[len(newarr)-1]
         index = np.random.random_integers(0, len(filteredimage_id)-1, batch_size)
         newindex =[]
-        print filteredimage_paths
+
         for x in index:
             newindex.append(filteredimage_id[x])
 
@@ -423,10 +421,12 @@ def train():
         current_length_q = train_data['length_q'][newindex]
         current_answers = train_data['answers'][newindex]
         current_img_list = train_data['img_list'][newindex]
-        current_img_vqa= get_attention_vqa(newindex,train_data['ques_id'])
+        current_img_vqa = get_attention_vqa(newindex,train_data['ques_id'])
         current_img = img_feature[current_img_list,:]
 
         # do the training process!!!
+        print current_question.shape
+
         _, loss = sess.run(
                 [train_op, tf_loss],
                 feed_dict={
@@ -438,6 +438,7 @@ def train():
 
         current_learning_rate = lr*decay_factor
         lr.assign(current_learning_rate).eval(session=sess)
+        print "first session done"
 
         tStop = time.time()
         if np.mod(itr, 100) == 0:
@@ -542,4 +543,4 @@ if __name__ == '__main__':
         train()
 
     #with tf.device('/gpu: 0'):
-     #   test()
+        #test()
