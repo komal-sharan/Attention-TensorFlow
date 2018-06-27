@@ -221,7 +221,7 @@ def right_align(seq,lengths):
         v[i][N-lengths[i]:N-1]=seq[i][0:lengths[i]-1]
     return v
 
-def get_attention_vqa(indexes,quesids,filteredimage_id):
+def get_attention_vqa(indexes,filteredimages):
 
     # build paths and do operations
     new_array_list=[]
@@ -229,7 +229,9 @@ def get_attention_vqa(indexes,quesids,filteredimage_id):
     pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train"
     #input_path = os.path.join(pathdir, image_path)
     for x in indexes:
-        input_path = os.path.join(pathdir,filteredimage_id[x]['filename'])
+        input_path = os.path.join(pathdir,filteredimages[filteredimages.keys()[x]])
+        print filteredimages.keys()[x]
+        print input_path
         attention_array=cv2.imread(input_path).astype(np.float32)
         attention=np.average(attention_array, axis=2)
         new_array=np.resize(attention,(7,7))
@@ -354,11 +356,12 @@ def get_data_test():
 def train():
     print 'loading dataset...'
     dataset, img_feature, train_data = get_data()
-    newp=open('save2.pkl')# Python 3: open(..., 'wb')
-    filteredimage_id=pickle.load(newp)
-    print filteredimage_id
+    newp=open('savelast.pkl')# Python 3: open(..., 'wb')
+    filteredimages=pickle.load(newp)
 
-    num_train = len(filteredimage_id)
+
+
+    num_train = len(filteredimages)
     #num_train = train_data['question'].shape[0]
     vocabulary_size = len(dataset['ix_to_word'].keys())
     print 'vocabulary_size : ' + str(vocabulary_size)
@@ -376,7 +379,7 @@ def train():
             vocabulary_size = vocabulary_size,
             drop_out_rate = 0.5)
 
-    print batch_size
+
 
 
 
@@ -404,25 +407,24 @@ def train():
         tStart = time.time()
         # shuffle the training data
 
-        newarr=sorted(filteredimage_id)
-        index = np.random.random_integers(0, len(filteredimage_id)-1, 100)
+
+        index = np.random.random_integers(0, len(filteredimages)-1, 100)
         newindex =[]
         print "_____________"
         print "newindex"
 
         for x in index:
-            print filteredimage_id[x]['index']
-            newindex.append(filteredimage_id[x]['index'])
+            newindex.append(filteredimages.keys()[x])
 
         current_question = train_data['question'][newindex,:]
         current_length_q = train_data['length_q'][newindex]
         current_answers = train_data['answers'][newindex]
         current_img_list = train_data['img_list'][newindex]
-        current_img_vqa = get_attention_vqa(index,train_data['ques_id'],filteredimage_id)
+        current_img_vqa = get_attention_vqa(index,filteredimages)
         current_img = img_feature[current_img_list,:]
 
         # do the training process!!!
-        print current_question.shape
+
 
         _, loss = sess.run(
                 [train_op, tf_loss],
@@ -435,7 +437,7 @@ def train():
 
         current_learning_rate = lr*decay_factor
         lr.assign(current_learning_rate).eval(session=sess)
-        print "first session done"
+
 
         tStop = time.time()
         if np.mod(itr, 100) == 0:
@@ -535,7 +537,7 @@ def test():
 
 if __name__ == '__main__':
 
-    with tf.device('/job:localhost/replica:0/task:0/cpu:0'):
+    with tf.device('/gpu: 0'):
 
         train()
 
