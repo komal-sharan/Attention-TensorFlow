@@ -44,7 +44,7 @@ class Answer_Generator():
     def build_model(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
 
-        vqa_image_prob= tf.placeholder(tf.float32, [self.batch_size,49])
+        vqa_image_prob= tf.placeholder(tf.float32, [self.batch_size,1,49])
 
         question = tf.placeholder(tf.int32, [self.batch_size, self.max_words_q])
         label = tf.placeholder(tf.int64, [self.batch_size,])
@@ -82,11 +82,10 @@ class Answer_Generator():
 
         # Calculate cross entropy
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label, logits=scores_emb)
-
-        y=prob_att1/vqa_image_prob
-
-
-        KL = tf.reduce_mean(-tf.nn.softmax_cross_entropy_with_logits(logits=prob_att2,  labels=y))
+        print "start"
+        print vqa_image_prob
+        print prob_att2
+        KL = kl_divergence(vqa_image_prob,prob_att2)
         final_loss=cross_entropy+KL
 
         # Calculate loss
@@ -221,26 +220,8 @@ def right_align(seq,lengths):
         v[i][N-lengths[i]:N-1]=seq[i][0:lengths[i]-1]
     return v
 
-def get_attention_vqa(indexes,filteredimages):
-
-    # build paths and do operations
-    new_array_list=[]
-    flag=False
-    pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/vqa-hat/vqahat_train"
-    #input_path = os.path.join(pathdir, image_path)
-    for x in indexes:
-        input_path = os.path.join(pathdir,filteredimages[filteredimages.keys()[x]])
-        print filteredimages.keys()[x]
-        print input_path
-        attention_array=cv2.imread(input_path).astype(np.float32)
-        attention=np.average(attention_array, axis=2)
-        new_array=np.resize(attention,(7,7))
-        new_array = np.reshape(new_array,(49,))
-        new_array_list.append(new_array)
-
-
-
-    return np.array(new_array_list)
+def kl_divergence(p, q):
+    return tf.reduce_sum(p * tf.log(p/q))
 
 def get_data():
 
@@ -281,11 +262,6 @@ def get_data():
 
         tem = hf.get('question_id_train')
         train_data['ques_id'] = np.array(tem)
-
-
-
-
-
 
     print('question aligning')
     train_data['question'] = right_align(train_data['question'], train_data['length_q'])
@@ -356,7 +332,7 @@ def get_data_test():
 def train():
     print 'loading dataset...'
     dataset, img_feature, train_data = get_data()
-    newp=open('save3.pkl')# Python 3: open(..., 'wb')
+    newp=open('save4.pkl')# Python 3: open(..., 'wb')
     datanew=pickle.load(newp)
     #m_train = len(filteredimages)
     num_train = datanew['question'].shape[0]
