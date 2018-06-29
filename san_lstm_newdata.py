@@ -9,7 +9,7 @@ import json
 import pdb
 import pickle
 rnn_cell = tf.contrib.rnn
-
+logs_path = '/tmp/vqamodellog'
 class Answer_Generator():
     def __init__(self, rnn_size, rnn_layer, batch_size, input_embedding_size, dim_image, dim_hidden, dim_attention, max_words_q, vocabulary_size, drop_out_rate):
 
@@ -40,7 +40,7 @@ class Answer_Generator():
         # score-embedding
         self.embed_scor_W = tf.Variable(tf.random_uniform([self.dim_hidden, num_output], -0.08, 0.08), name='embed_scor_W')
         self.embed_scor_b = tf.Variable(tf.random_uniform([num_output], -0.08, 0.08), name='embed_scor_b')
-
+        self.summaryop =None
     def build_model(self):
         image = tf.placeholder(tf.float32, [self.batch_size, self.dim_image[0], self.dim_image[1], self.dim_image[2]])
 
@@ -85,11 +85,13 @@ class Answer_Generator():
         print "start"
         print vqa_image_prob
         print prob_att2
-        KL = kl_divergence(vqa_image_prob,prob_att2)
+        KL = kl_divergence(prob_att2,vqa_image_prob)
         final_loss=cross_entropy+KL
 
         # Calculate loss
         loss = tf.reduce_mean(final_loss)
+        tf.summary.scalar("cost", loss)
+        self.summaryop =tf.summary.merge_all()
 
         return loss, image,vqa_image_prob, question, label
 
@@ -354,27 +356,28 @@ def train():
 
 
 
-
-
-    tf_loss, tf_image, tf_vqa ,tf_question, tf_label = model.build_model()
-
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-    with tf.device('/cpu:0'):
-        saver = tf.train.Saver(max_to_keep=100)
+    tf_loss, tf_image, tf_vqa ,tf_question, tf_label = model.build_model()
+
+
+
+
+    saver = tf.train.Saver(max_to_keep=100)
 
     tvars = tf.trainable_variables()
     lr = tf.Variable(learning_rate)
     opt = tf.train.AdamOptimizer(learning_rate=lr)
     # gradient clipping
     gvs = opt.compute_gradients(tf_loss,tvars)
-    with tf.device('/cpu:0'):
-        clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
+
+    clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
     train_op = opt.apply_gradients(clipped_gvs)
 
     sess.run(tf.initialize_all_variables())
 
     print 'start training...'
+    writer = tf.summary.FileWriter(logs_path)
     for itr in range(max_itr):
 
         tStart = time.time()
@@ -402,6 +405,7 @@ def train():
                     tf_question: current_question,
                     tf_label: current_answers
                    })
+        writer.add_summary(model.summaryop,itr )
 
         current_learning_rate = lr*decay_factor
         lr.assign(current_learning_rate).eval(session=sess)
@@ -439,9 +443,9 @@ def test():
 
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-    with tf.device('/cpu:0'):
-        saver = tf.train.Saver()
-        saver.restore(sess, os.path.join(checkpoint_path, 'model-70000'))
+
+    saver = tf.train.Saver()
+    saver.restore(sess, os.path.join(checkpoint_path, 'model-70000'))
     print os.path.join(checkpoint_path, 'model-70000')
     tStart_total = time.time()
     result = []
@@ -505,8 +509,8 @@ def test():
 
 if __name__ == '__main__':
 
-    with tf.device('/gpu: 0'):
-        train()
+
+    train()
 
     #with tf.device('/gpu: 0'):
         #test()
