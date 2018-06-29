@@ -9,7 +9,7 @@ import json
 import pdb
 import pickle
 rnn_cell = tf.contrib.rnn
-logs_path = '/tmp/vqamodellog'
+logs_path = '/tmp/newlog'
 class Answer_Generator():
     def __init__(self, rnn_size, rnn_layer, batch_size, input_embedding_size, dim_image, dim_hidden, dim_attention, max_words_q, vocabulary_size, drop_out_rate):
 
@@ -90,8 +90,8 @@ class Answer_Generator():
 
         # Calculate loss
         loss = tf.reduce_mean(final_loss)
-        tf.summary.scalar("cost", loss)
-        self.summaryop =tf.summary.merge_all()
+        self.summaryop =tf.summary.scalar("cost", loss)
+
 
         return loss, image,vqa_image_prob, question, label
 
@@ -223,7 +223,7 @@ def right_align(seq,lengths):
     return v
 
 def kl_divergence(p, q):
-    return tf.reduce_sum(p * tf.log(p/q))
+    return tf.reduce_sum(((p * tf.log(p/q))+0.00001),axis=1)
 
 def get_data():
 
@@ -377,7 +377,7 @@ def train():
     sess.run(tf.initialize_all_variables())
 
     print 'start training...'
-    writer = tf.summary.FileWriter(logs_path)
+    writer = tf.summary.FileWriter(logs_path,graph=tf.get_default_graph())
     for itr in range(max_itr):
 
         tStart = time.time()
@@ -397,15 +397,15 @@ def train():
         # do the training process!!!
 
 
-        _, loss = sess.run(
-                [train_op, tf_loss],
+        _, loss, summary = sess.run(
+                [train_op, tf_loss,model.summaryop],
                 feed_dict={
                     tf_image: current_img,
                     tf_vqa : current_img_vqa,
                     tf_question: current_question,
                     tf_label: current_answers
                    })
-        writer.add_summary(model.summaryop,itr )
+        writer.add_summary(summary,itr )
 
         current_learning_rate = lr*decay_factor
         lr.assign(current_learning_rate).eval(session=sess)
