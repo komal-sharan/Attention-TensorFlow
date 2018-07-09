@@ -10,6 +10,7 @@ import json
 import os
 import time
 import pdb
+from PIL import Image
 
 rnn_cell = tf.contrib.rnn
 vars_to_rename = {
@@ -120,9 +121,6 @@ class Answer_Generator():
         # FINAL ANSWER
         self.generated_ANS = tf.nn.softmax(scores_emb)
 
-
-
-
     def attention(self, question_emb, image_emb):
 
         ques_att_W = tf.get_variable('ques_att_W', [self.dim_hidden, self.dim_att],
@@ -178,7 +176,7 @@ class Answer_Generator():
         return generated_ans, prob_att1, prob_att2
 
 ##########################################################
-web_path = '/home/ksharan1/san-vqa-tensorflow/demo/'
+web_path = '/home/ksharan1/visualization/san-vqa-tensorflow/demo/'
 
 vqa_data_json = os.path.join(web_path, 'vqa_data.json')
 answer_txt = os.path.join(web_path, 'media/vqa_ans.txt')
@@ -186,12 +184,12 @@ att_image = os.path.join(web_path, 'media/att.jpg')
 #ques = 'What is this photo taken looking through?'
 
 
-itoa_json = '/home/ksharan1/san-vqa-tensorflow/ix_to_ans.json'            # mapping idx to answer
-wtoi_json = '/home/ksharan1/san-vqa-tensorflow/word_to_ix.json'           # mapping word to idx
-cnn_proto = '/home/ksharan1/san-vqa-tensorflow/vgg19/deploy_batch40.prototxt'
-cnn_model = '/home/ksharan1/san-vqa-tensorflow/vgg19/VGG_ILSVRC_19_layers.caffemodel'
-vqa_model = '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model-70000'
-new_checkpoint= '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model2-70000'
+itoa_json = '/home/ksharan1/visualization/san-vqa-tensorflow/ix_to_ans.json'            # mapping idx to answer
+wtoi_json = '/home/ksharan1/visualization/san-vqa-tensorflow/word_to_ix.json'           # mapping word to idx
+cnn_proto = '/home/ksharan1/visualization/san-vqa-tensorflow/vgg19/deploy_batch40.prototxt'
+cnn_model = '/home/ksharan1/visualization/san-vqa-tensorflow/vgg19/VGG_ILSVRC_19_layers.caffemodel'
+vqa_model = '/home/ksharan1/visualization/san-vqa-tensorflow/model/san_lstm_att3/model-70000'
+new_checkpoint= '/home/ksharan1/visualization/san-vqa-tensorflow/model/san_lstm_att3/model2-70000'
 
 input_embedding_size = 512              # the encoding size of each token in the vocabulary
 rnn_size = 256                          # size of the rnn in number of hidden nodes in each layer
@@ -234,7 +232,6 @@ def extract_imfeat(img):
     #img_data = np.expand_dims(img_transform, axis=0)
     #img_data = preprocess_input(img_data)
     #imfeat = model.predict(img_data)
-
     caffe.set_device(0)
     caffe.set_mode_gpu()
     net = caffe.Net(cnn_proto, cnn_model, caffe.TEST)
@@ -244,16 +241,12 @@ def extract_imfeat(img):
     net.blobs['data'].data[:] = np.array([I])
     net.forward()
     imfeat = net.blobs['pool5'].data[...].copy()
-    print "ferferferf"
     mag = np.sqrt(np.sum(np.multiply(imfeat, imfeat), axis=1))
     imfeat = np.transpose(imfeat,(0,2,3,1))
     imfeat = np.divide(imfeat, np.transpose(np.tile(mag,[512,1,1,1]),(1,2,3,0)) + 1e-8)
     return imfeat
 
-
-
 def attention(img, att_map):
-
     att_map = np.reshape(att_map, [7,7])
     att_map = att_map.repeat(32, axis=0).repeat(32, axis=1)
     att_map = np.tile(np.expand_dims(att_map, 2),[1,1,3])
@@ -263,19 +256,16 @@ def attention(img, att_map):
     att_map = (att_map-att_map.min()) / att_map.max()
     att_map = cv2.resize(att_map, (img.shape[1], img.shape[0]))
     new_img = att_map*255*0.8 + img*0.2
-
     return new_img
 
-def test(model_path='model/san_lstm_att/model-70000'):
-    #
+def test(model_path='model/san_lstm_att3/model-70000'):
+
     print("Model Path: " + model_path)
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.2, allow_growth=True)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     #tf.initialize_all_variables().run(session=sess)
     #with tf.Session() as sess:
     #    tf.initialize_all_variables()
-
-
     model = Answer_Generator(
             rnn_size = rnn_size,
             rnn_layer = rnn_layer,
@@ -298,40 +288,41 @@ def test(model_path='model/san_lstm_att/model-70000'):
     #reader = tf.train.NewCheckpointReader(vqa_model)
     sess.run(tf.initialize_all_variables())
     t_vars = tf.trainable_variables()
-    
-
     with tf.device('/cpu: 0'):
     	saver = tf.train.Saver(t_vars)
-    	saver.restore(sess, '/home/ksharan1/san-vqa-tensorflow/model/san_lstm_att/model-70000')
+    	saver.restore(sess, '/home/ksharan1/visualization/san-vqa-tensorflow/model/san_lstm_att3/model-70000')
 
     while 1:
-        print "im here komal"
+
         if os.path.isfile(vqa_data_json):
             # get data
             vqa_data = json.load(open(vqa_data_json, 'r'))
             ques = vqa_data['question']
-
-
-            imname = os.path.join(web_path, vqa_data['image'].encode('utf-8')[1:])
+            print ques
+            imname = vqa_data['image']
+            #print vqa_data['image']
             print imname
             img = cv2.imread(imname).astype(np.float32)
             os.remove(vqa_data_json)
 
+
             question = prepro_text(ques)
             imfeat = extract_imfeat(img)
-            print "im in vqa_data_json"
+
             generated_ans, prob_att1, prob_att2 = model.test(imfeat, question)
             generated_ans = np.argmax(generated_ans, axis=1)[0]
             att2 = attention(img, prob_att2)
             cv2.imwrite(att_image, att2.astype(np.uint8))
 
             ans = itoa[str(generated_ans+1)]
+            print ans
             with open(answer_txt, 'w') as f:
                 f.write(ans)
             print('Q: {}'.format(ques))
             print('A: {}'.format(ans))
         time.sleep(1)
 
+
 if __name__ == '__main__':
-    with tf.device('/job:localhost/replica:0/task:0/cpu:0'):
+
         test(vqa_model)
