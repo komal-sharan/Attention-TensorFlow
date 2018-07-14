@@ -24,6 +24,7 @@ import time
 import cv2
 import numpy as np
 from PIL import Image
+import pickle
 
 
 def testoverlay(image1,image2):
@@ -93,16 +94,19 @@ def upload_vqa(request):
             list_vqa_hat.append(question_id)
             list_of_vqa_paths.append(image_path)
         index=random.randint(0,len(list_vqa_hat))
+        inputp=os.path.join(pathdir, str(list_of_vqa_paths[index]))
         for x in range(len(list_of_img)-1):
             input_path = fs.url(str(list_of_vqa_paths[index]))
             if str(list_of_img[x])==str(list_vqa_hat[index]):
-                uploaded_file_url=input_path
+                indextogive=x
                 break
-        vqa_data_file['image'] ="/home/ksharan1/visualization/san-vqa-tensorflow/data/"+imgs_train[index]['img_path']
-        originalimage=imgs_train[index]['img_path'].split('/')[1]
+        vqa_data_file['image'] ="/home/ksharan1/visualization/san-vqa-tensorflow/data/"+imgs_train[indextogive]['img_path']
 
-        originalimage=fs.url(str(originalimage))
-        vqa_data_file['question'] = imgs_train[index]['question']
+        question_id=imgs_train[index]['ques_id']
+
+        
+
+        vqa_data_file['question'] = imgs_train[indextogive]['question']
         json.dump(vqa_data_file, open('/home/ksharan1/visualization/san-vqa-tensorflow/demo/vqa_data_file.json', 'w'))
         pathdir = "/home/ksharan1/visualization/san-vqa-tensorflow/demo/media"
         image = vqa_data_file['image']
@@ -124,7 +128,7 @@ def upload_vqa(request):
                     answer = f.read()
 
                     #print answer
-                    print "fvgfgbtb"
+
                     #print vqa_data_file['question']
                     uploaded_file_url=testoverlay(vqa_data_file['image'],inputp)
                     #uploaded_file_url="/home/ksharan1/visualization/san-vqa-tensorflow/new.png"
