@@ -9,7 +9,7 @@ import json
 import pdb
 import pickle
 rnn_cell = tf.contrib.rnn
-logs_path = '/tmp/finetuneaccuracy_current_multitask'
+logs_path = '/tmp/current_multitask'
 class Answer_Generator():
     def __init__(self, rnn_size, rnn_layer, batch_size, input_embedding_size, dim_image, dim_hidden, dim_attention, max_words_q, vocabulary_size, drop_out_rate):
 
@@ -104,6 +104,8 @@ class Answer_Generator():
         loss = tf.reduce_mean(final_loss)
         self.summary_acc=tf.summary.scalar("accuracy", acc_op)
         self.summaryop =tf.summary.scalar("cost", loss)
+        self.cross_loss=tf.summary.scalar("cost", onlycross)
+        self.allsumaries_1= tf.summary.merge([self.cross_loss, self.summary_acc])
         self.allsumaries= tf.summary.merge([self.summaryop, self.summary_acc])
 
         return loss,onlycross,image,vqa_image_prob, question, label
@@ -137,7 +139,6 @@ class Answer_Generator():
 
         #attention models
         with tf.variable_scope("att1",reuse=True):
-
             prob_att1, comb_emb = self.attention(question_emb, image_emb)
         with tf.variable_scope("att2"):
             prob_att2, comb_emb = self.attention(comb_emb, image_emb)
@@ -387,16 +388,27 @@ def train():
     gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.5, allow_growth=True)
     sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
     tf_loss,tf_onlycross, tf_image, tf_vqa ,tf_question, tf_label = model.build_model()
-    saver = tf.train.Saver(max_to_keep=100)
+    saver = tf.train.Saver()
 
     tvars = tf.trainable_variables()
     #saver.restore(sess, os.path.join(checkpoint_path_for_restore, 'model-70000'))
+    ##################################################################
     lr = tf.Variable(learning_rate)
     opt = tf.train.AdamOptimizer(learning_rate=lr)
-    # gradient clipping
+    # gradient clipping for loss cross+KL
+    ################################################################
     gvs = opt.compute_gradients(tf_loss,tvars)
     clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
-    train_op = opt.apply_gradients(clipped_gvs)
+    train_op_total = opt.apply_gradients(clipped_gvs)
+
+    # gradient clipping for added a cross entropy
+    ##################################################################
+    gvs_new = opt.compute_gradients(tf_onlycross,tvars)
+    clipped_gvs_new = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs_new if grad is not None]
+    train_op_cross = opt.apply_gradients(clipped_gvs_new)
+
+    ##################################################################
+    index_hat = np.random.random_integers(0, num_vqahat-1, 100)
     init = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
     sess.run(init)
     print 'start training...'
@@ -406,51 +418,35 @@ def train():
     for itr in range(max_itr):
         tStart = time.time()
         # shuffle the training data
-
-
         # do the training process!!!
         if alter:
-            gvs = opt.compute_gradients(tf_onlycross,tvars)
-            clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
-            t_op_first = opt.apply_gradients(clipped_gvs)
-
-            dummy = np.random.random_integers(0, num_vqahat-1, 100)
-
             index = np.random.random_integers(0, num_train-1, 100)
             current_question = train_data['question'][index,:]
             current_length_q = train_data['length_q'][index]
             current_answers = train_data['answers'][index]
             current_img_list = train_data['img_list'][index]
-            current_vqahat_dummy = dataVQAhat['vqahat'][dummy,:]
             current_img = img_feature[current_img_list,:]
 
-            _,loss,onlycross,summary = sess.run(
-                        [t_op_first, tf_loss,tf_onlycross,model.allsumaries],
+            _,onlycross,summary = sess.run(
+                        [train_op_cross,tf_onlycross,model.allsumaries_1],
                         feed_dict={
                             tf_image: current_img,
-                            tf_vqa : current_vqahat_dummy,
                             tf_question: current_question,
                             tf_label: current_answers
                             })
             alter=not alter
-            print "onlyloss"
-
+            #print "Iteration: ", itr, " onlycrossLoss: ", onlycross, " Learning Rate: ", lr.eval(session=sess)
 
         else:
-            gvs = opt.compute_gradients(tf_loss,tvars)
-            clipped_gvs = [(tf.clip_by_value(grad, -10.0, 10.0), var) for grad, var in gvs if grad is not None]
-            t_op_sec = opt.apply_gradients(clipped_gvs)
-            index_hat = np.random.random_integers(0, num_vqahat-1, 100)
-
+            index_hat = np.random.random_integers(0,num_vqahat-1, 100)
             current_vqahat_question = dataVQAhat['question'][index_hat,:]
             current_vqahat_length_q = dataVQAhat['length_q'][index_hat]
-            current_vqahat_answers = dataVQAhat['answers'][index_hat]
+            current_vqahat_answers =  dataVQAhat['answers'][index_hat]
             current_vqahat_img_list = dataVQAhat['img_list'][index_hat]
-            current_vqahat_img_vqa = dataVQAhat['vqahat'][index_hat,:]
+            current_vqahat_img_vqa =  dataVQAhat['vqahat'][index_hat,:]
             current_vqahat_img = img_feature[current_vqahat_img_list,:]
-
-            _,loss,onlycross,summary = sess.run(
-                        [t_op_sec, tf_loss,tf_onlycross,model.allsumaries],
+            _,loss,summary = sess.run(
+                        [train_op_total, tf_loss,model.allsumaries],
                         feed_dict={
                             tf_image: current_vqahat_img,
                             tf_vqa : current_vqahat_img_vqa,
@@ -458,29 +454,25 @@ def train():
                             tf_label: current_vqahat_answers
                             })
             alter=not alter
-            print "partial loss"
-
-        if np.mod(itr, 500) == 0:
-            index_val = np.random.random_integers(0, num_val-1, 100)
-            dummy = np.random.random_integers(0, num_vqahat-1, 100)
-            t_op=tf.zeros([3, 4], tf.int32)
-            current_val_question = test_data['question'][index_val,:]
-            current_val_length_q = test_data['length_q'][index_val]
-            current_val_answers = test_data['answers'][index_val]
-            current_val_img_list = test_data['img_list'][index_val]
-            current_val_img_vqa = dataVQAhat['vqahat'][dummy,:]
-            current_val_img = img_feature[current_val_img_list,:]
-            _, loss,valsummary = sess.run(
-                    [t_op, tf_loss,model.allsumaries],
-                    feed_dict={
-                        tf_image: current_val_img,
-                        tf_vqa : current_val_img_vqa,
-                        tf_question: current_val_question,
-                        tf_label: current_val_answers
+            #print "Iteration: ", itr, " Loss: ", loss, " Learning Rate: ", lr.eval(session=sess)
 
 
-                       })
-            test_writer.add_summary(valsummary,itr )
+        #if np.mod(itr, 500) == 0:
+        #    index_val = np.random.random_integers(0, num_val-1, 100)
+        #    t_op=tf.zeros([3, 4], tf.int32)
+        #    current_val_question = test_data['question'][index_val,:]
+        #    current_val_length_q = test_data['length_q'][index_val]
+        #    current_val_answers = test_data['answers'][index_val]
+        #    current_val_img_list = test_data['img_list'][index_val]
+        #    current_val_img = img_feature[current_val_img_list,:]
+        #    _, loss,valsummary = sess.run(
+        #            [t_op, tf_loss,model.allsumaries],
+        #            feed_dict={
+        #                tf_image: current_val_img,
+        #                tf_question: current_val_question,
+        #                tf_label: current_val_answers
+        #               })
+        #    test_writer.add_summary(valsummary,itr )
 
 
         train_writer.add_summary(summary,itr )
@@ -490,12 +482,15 @@ def train():
 
 
         tStop = time.time()
-        if np.mod(itr, 100) == 0:
-            print "Iteration: ", itr, " Loss: ", loss, " Learning Rate: ", lr.eval(session=sess)
+        if np.mod(itr, 400) == 0:
+            if alter == False:
+                print "Iteration: ", itr, " Loss: ", onlycross, " Learning Rate: ", lr.eval(session=sess)
+            else:
+                print "Iteration: ", itr, " Loss: ", loss, " Learning Rate: ", lr.eval(session=sess)
             print ("Time Cost:", round(tStop - tStart,2), "s")
-        if np.mod(itr, 5000) == 0:
+        if np.mod(itr, 500) == 0:
             print "Iteration ", itr, " is done. Saving the model ..."
-            #saver.save(sess, os.path.join(checkpoint_path, 'model'), global_step=itr)
+            saver.save(sess, os.path.join(checkpoint_path, 'model'), global_step=itr)
 
 def test():
     print 'loading dataset...'
